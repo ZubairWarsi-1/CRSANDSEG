@@ -245,8 +245,9 @@ def render_sidebar():
         st.caption("Active Dataset")
         curr_name = st.session_state.get("dataset_name", "Unknown")
         is_syn = st.session_state.get("is_synthetic", False)
-        syn_badge = " *(Synthetic Demo)*" if is_syn else " *(Authentic Data)*"
-        st.info(f"**{curr_name}**\n{len(st.session_state.get('current_dataset', [])):,} records{syn_badge}")
+        ds_source = st.session_state.get("dataset_source_class", "Synthetic Test Data" if is_syn else "Benchmark Sample Dataset")
+        
+        st.info(f"**{curr_name}**\n{len(st.session_state.get('current_dataset', [])):,} records\n\n*{ds_source}*")
 
         # Quick switcher between pre-loaded datasets
         ds_choice = st.selectbox(

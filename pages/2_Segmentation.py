@@ -24,7 +24,7 @@ from src.ui_components import (
     COLOR_ACCENT
 )
 from src.segmentation import calculate_rfm, perform_kmeans_clustering
-from src.validation import validate_for_rfm, validate_for_clustering, infer_column_roles
+from src.validation import validate_for_rfm, validate_for_clustering, infer_column_roles, check_feature_redundancy
 
 st.set_page_config(page_title="Customer Segmentation — Customer360", page_icon="🔍", layout="wide")
 apply_custom_css()
@@ -44,6 +44,7 @@ if df is None or df.empty:
     st.stop()
 
 roles = infer_column_roles(df)
+target_col = roles["target_col"]
 
 # Tabs: Method Selection
 tab_kmeans, tab_rfm = st.tabs(["🧩 K-Means Feature Clustering", "🛒 Transactional RFM Analysis"])
@@ -53,13 +54,11 @@ tab_kmeans, tab_rfm = st.tabs(["🧩 K-Means Feature Clustering", "🛒 Transact
 # =========================================================================
 with tab_kmeans:
     st.markdown("### 🧩 Unsupervised K-Means Behavioral Clustering")
-    st.caption("Group customers based on multi-dimensional numerical features (e.g., tenure, monthly spending, total charges).")
+    st.caption("Group customers based on multi-dimensional continuous features (e.g. tenure, monthly charges, total spending).")
 
     # Detect numerical columns
     numeric_cols = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c]) and df[c].nunique() > 2]
-    
-    # Filter out potential index/ID columns
-    valid_features = [c for c in numeric_cols if not c.lower().endswith("id")]
+    valid_features = [c for c in numeric_cols if not c.lower().endswith("id") and c != roles["id_col"]]
 
     if len(valid_features) < 2:
         st.warning("Current dataset contains fewer than 2 continuous numerical features required for K-Means clustering.")
@@ -67,48 +66,75 @@ with tab_kmeans:
         col_ctrl1, col_ctrl2 = st.columns([2, 1])
 
         with col_ctrl1:
-            default_feats = valid_features[:3] if len(valid_features) >= 3 else valid_features
+            # Default to tenure and monthly charges if available
+            default_feats = []
+            for preferred in ["tenure", "MonthlyCharges", "TotalCharges"]:
+                matched = next((c for c in valid_features if preferred.lower() in c.lower()), None)
+                if matched and matched not in default_feats:
+                    default_feats.append(matched)
+            if len(default_feats) < 2:
+                default_feats = valid_features[:3]
+
             selected_features = st.multiselect(
                 "Select Numerical Features for Clustering",
                 options=valid_features,
                 default=default_feats,
-                help="Choose continuous attributes that describe customer value or engagement."
+                help="Choose continuous attributes describing customer relationship and spending."
             )
 
+        # Check for collinearity / feature redundancy
+        if len(selected_features) >= 2:
+            redundancies = check_feature_redundancy(df, selected_features, threshold=0.80)
+            if redundancies:
+                with st.expander("⚠️ Multicollinearity & Feature Redundancy Warnings", expanded=False):
+                    for r in redundancies:
+                        st.warning(f"**{r['feature_1']}** ↔ **{r['feature_2']}** (r = {r['correlation']}): {r['warning']}")
+
         with col_ctrl2:
-            n_clusters = st.slider("Select Number of Clusters (k)", min_value=2, max_value=6, value=4)
+            k_mode = st.radio("K Selection Mode", ["Automatic Recommendation", "Manual Slider"], horizontal=True)
+            if k_mode == "Manual Slider":
+                n_clusters_input = st.slider("Select Number of Clusters (k)", min_value=2, max_value=8, value=3)
+            else:
+                n_clusters_input = None  # Signals auto-selection in perform_kmeans_clustering
 
         if len(selected_features) >= 2:
             is_valid, msg = validate_for_clustering(df, selected_features)
             if not is_valid:
                 st.error(f"Validation Error: {msg}")
             else:
-                with st.spinner("Executing K-Means clustering and computing silhouette diagnostics..."):
+                with st.spinner("Executing K-Means clustering, calculating inertia, and evaluating silhouette cohesion..."):
                     kmeans_result = perform_kmeans_clustering(
                         df,
                         feature_cols=selected_features,
-                        n_clusters=n_clusters,
+                        n_clusters=n_clusters_input,
+                        target_col=target_col,
                         random_state=42
                     )
                     st.session_state["kmeans_data"] = kmeans_result
 
                 res_df = kmeans_result["dataframe"]
+                chosen_k = kmeans_result["n_clusters"]
+                auto_k = kmeans_result["auto_k"]
+                k_reason = kmeans_result["k_selection_reason"]
                 sil_score = kmeans_result["silhouette_score"]
                 elbow_df = kmeans_result["elbow_data"]
                 profiles_df = kmeans_result["cluster_profiles"]
                 pca_var = kmeans_result["pca_variance"]
 
+                # Explain K Selection
+                st.info(f"💡 **Cluster Selection Rationale (k={chosen_k}):** {k_reason}")
+
                 # Metrics banner
                 m1, m2, m3, m4 = st.columns(4)
                 with m1:
-                    render_kpi("Optimal Clusters (k)", n_clusters, "User selected")
+                    render_kpi("Configured Clusters (k)", chosen_k, f"Auto Recommendation: k={auto_k}")
                 with m2:
-                    sil_quality = "Good" if sil_score >= 0.5 else ("Moderate" if sil_score >= 0.3 else "Weak")
+                    sil_quality = "Good (≥0.50)" if sil_score >= 0.5 else ("Moderate (0.35–0.49)" if sil_score >= 0.35 else "Weak (<0.35)")
                     render_kpi("Silhouette Score", sil_score, f"Separation: {sil_quality}")
                 with m3:
-                    render_kpi("Total Clustered", f"{len(res_df):,}", "Customers")
+                    render_kpi("Total Clustered", f"{len(res_df):,}", "Customer accounts")
                 with m4:
-                    render_kpi("PCA Variance", f"{sum(pca_var):.1f}%", f"PC1: {pca_var[0]}%, PC2: {pca_var[1]}%")
+                    render_kpi("PCA Explained Variance", f"{sum(pca_var):.1f}%", f"PC1: {pca_var[0]}%, PC2: {pca_var[1]}%")
 
                 st.markdown("<br>", unsafe_allow_html=True)
 
@@ -123,14 +149,14 @@ with tab_kmeans:
                         y="PCA2",
                         color="ClusterName",
                         hover_data=[roles["id_col"]] + selected_features if roles["id_col"] else selected_features,
-                        title=f"Customer Clusters Projected on First 2 Principal Components ({sum(pca_var):.1f}% Variance)",
+                        title=f"Customer Clusters Projected on First 2 Principal Components ({sum(pca_var):.1f}% Total Variance)",
                         color_discrete_sequence=[COLOR_PRIMARY, COLOR_SUCCESS, COLOR_WARNING, COLOR_DANGER, COLOR_ACCENT, COLOR_SECONDARY]
                     )
                     fig_pca.update_layout(get_plotly_layout(height=420))
                     st.plotly_chart(fig_pca, use_container_width=True)
 
                 with plot_col2:
-                    st.markdown("#### 📉 Elbow & Silhouette Diagnostics")
+                    st.markdown("#### 📉 Elbow (Inertia) & Silhouette Diagnostics")
                     fig_elbow = go.Figure()
                     fig_elbow.add_trace(go.Scatter(
                         x=elbow_df["k"],
@@ -158,17 +184,72 @@ with tab_kmeans:
                             overlaying="y",
                             side="right"
                         ),
-                        legend=dict(x=0.1, y=1.1, orientation="h")
+                        legend=dict(x=0.05, y=1.12, orientation="h")
                     )
                     st.plotly_chart(fig_elbow, use_container_width=True)
 
-                # Cluster Profiles Table
-                st.markdown("### 📊 Cluster Profile Characteristics")
-                st.dataframe(profiles_df, use_container_width=True)
+                # Cluster-Wise Churn Analysis Section
+                st.markdown("### 📊 Cluster-Level Churn Analysis & Risk Profiling")
+                if "HistoricalChurnRate" in profiles_df.columns:
+                    c_chart_col1, c_chart_col2 = st.columns([1, 1])
+                    with c_chart_col1:
+                        fig_cchurn = px.bar(
+                            profiles_df,
+                            x="ClusterName",
+                            y="HistoricalChurnRate",
+                            text="HistoricalChurnRate",
+                            color="HistoricalChurnRate",
+                            color_continuous_scale="Reds",
+                            labels={"HistoricalChurnRate": "Observed Churn Rate (%)", "ClusterName": "Cluster Profile"},
+                            title="Observed Attrition Rate by Cluster (Within Group %)"
+                        )
+                        fig_cchurn.update_traces(texttemplate="%{y:.1f}%", textposition="outside")
+                        fig_cchurn.update_layout(get_plotly_layout(height=350))
+                        st.plotly_chart(fig_cchurn, use_container_width=True)
+
+                    with c_chart_col2:
+                        fig_csize = px.pie(
+                            profiles_df,
+                            names="ClusterName",
+                            values="CustomerCount",
+                            hole=0.45,
+                            title="Cluster Population Share",
+                            color_discrete_sequence=[COLOR_PRIMARY, COLOR_SUCCESS, COLOR_WARNING, COLOR_DANGER, COLOR_ACCENT]
+                        )
+                        fig_csize.update_layout(get_plotly_layout(height=350))
+                        st.plotly_chart(fig_csize, use_container_width=True)
+
+                # Actionable Segment Strategy Cards
+                st.markdown("### 🎯 Strategic Recommendations per Customer Cohort")
+                for _, p_row in profiles_df.iterrows():
+                    c_name = p_row["ClusterName"]
+                    c_cnt = p_row["CustomerCount"]
+                    c_pct = p_row["CustomerPercentage"]
+                    c_strat = p_row.get("RecommendedStrategy", "N/A")
+                    c_rat = p_row.get("StrategyRationale", "N/A")
+                    c_churn = f"{p_row.get('HistoricalChurnRate', 0.0):.1f}%" if "HistoricalChurnRate" in p_row else "N/A"
+
+                    st.markdown(
+                        f"""
+                        <div class="content-card" style="margin-bottom: 0.8rem; border-left: 4px solid {COLOR_ACCENT};">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <h5 style="margin: 0; color: #1E293B;">🏷️ {c_name}</h5>
+                                <span class="badge badge-info">{c_cnt:,} customers ({c_pct}%) | Historical Churn: {c_churn}</span>
+                            </div>
+                            <p style="margin: 0.4rem 0 0.2rem 0; font-size: 0.88rem; color: #059669;"><strong>Recommended Action:</strong> {c_strat}</p>
+                            <p style="margin: 0; font-size: 0.84rem; color: #64748B;"><strong>Business Rationale:</strong> {c_rat}</p>
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
+
+                # Cluster Profiles Full Table
+                st.markdown("### 📋 Cluster Statistical Summary")
+                st.dataframe(profiles_df, use_container_width=True, hide_index=True)
 
                 # Drill down customer table
-                st.markdown("### 📋 Segmented Customers")
-                selected_cluster = st.selectbox("Filter by Cluster", ["All"] + list(profiles_df["ClusterName"].unique()))
+                st.markdown("### 🔎 Customer Record Drill-Down")
+                selected_cluster = st.selectbox("Filter Customer List by Cluster", ["All"] + list(profiles_df["ClusterName"].unique()))
                 view_df = res_df if selected_cluster == "All" else res_df[res_df["ClusterName"] == selected_cluster]
                 
                 show_cols = ([roles["id_col"]] if roles["id_col"] else []) + ["ClusterName"] + selected_features
@@ -176,14 +257,14 @@ with tab_kmeans:
                     show_cols.append(roles["target_col"])
                 st.dataframe(view_df[show_cols].head(100), use_container_width=True)
         else:
-            st.info("Please select at least 2 features to run clustering.")
+            st.info("Please select at least 2 numerical features to run clustering.")
 
 # =========================================================================
 # TAB 2: RFM ANALYSIS
 # =========================================================================
 with tab_rfm:
     st.markdown("### 🛒 Transaction-Level RFM (Recency, Frequency, Monetary) Analysis")
-    st.caption("Computes behavioral value from purchase timestamps and order totals.")
+    st.caption("Quantifies behavioral loyalty and spending velocity from granular order timestamps and transaction totals.")
 
     # Check suitability of current dataset for RFM
     id_candidates = [c for c in df.columns if "id" in c.lower() or "cust" in c.lower()]
@@ -191,21 +272,28 @@ with tab_rfm:
     monetary_candidates = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
 
     if not date_candidates:
-        st.info("💡 **Notice:** The active dataset does not contain transactional timestamp columns required for RFM.")
+        st.info("💡 **Methodological Note:** The active dataset does not contain transaction timestamp columns required for RFM.")
         st.markdown(
             """
-            The **IBM Telco dataset** is a subscription-level dataset containing tenure and monthly recurring charges, suitable for **K-Means Clustering** and **Churn Prediction**.
+            The **IBM Telco dataset** is a subscription-level account dataset containing tenure and recurring monthly charges. 
+            It is ideally structured for **Behavioral K-Means Clustering** and **Supervised Churn Prediction**.
             
-            To test **RFM Analysis**, select **'Retail Transactions (RFM)'** from the sidebar switcher or upload your order log CSV.
+            **RFM Analysis** strictly requires transaction logs with distinct order dates and transaction amounts to calculate:
+            - **Recency:** Days since latest transaction date.
+            - **Frequency:** Count of unique order transactions per customer.
+            - **Monetary:** Sum of all order transactions for each customer.
+            
+            To explore RFM Analysis, switch to the built-in **Retail Transactions** demo dataset or upload an order log CSV in **Data Upload**.
             """
         )
-        if st.button("🔄 Switch to Retail Transactions Demo for RFM"):
+        if st.button("🔄 Switch to Retail Transactions Demo for RFM Analysis", type="primary"):
             from src.data_loader import get_sample_retail_data
             df_ret, is_syn = get_sample_retail_data()
             st.session_state["current_dataset"] = df_ret
             st.session_state["dataset_name"] = "Retail Transactions"
             st.session_state["is_synthetic"] = is_syn
             st.session_state["dataset_type"] = "transaction"
+            st.session_state["predictions_df"] = None
             st.rerun()
 
     else:
@@ -222,20 +310,20 @@ with tab_rfm:
         if not is_rfm_valid:
             st.error(f"Cannot perform RFM: {rfm_msg}")
         else:
-            with st.spinner("Calculating Recency, Frequency, and Monetary scores..."):
+            with st.spinner("Aggregating purchase history and computing Recency, Frequency, and Monetary scores..."):
                 rfm_df, rfm_stats = calculate_rfm(df, sel_id, sel_date, sel_monetary)
                 st.session_state["rfm_data"] = rfm_df
 
             # Metrics
             rkpi1, rkpi2, rkpi3, rkpi4 = st.columns(4)
             with rkpi1:
-                render_kpi("Unique Customers", f"{rfm_stats['total_customers']:,}", "From transaction log")
+                render_kpi("Unique Customers", f"{rfm_stats['total_customers']:,}", "Aggregated buyer accounts")
             with rkpi2:
-                render_kpi("Total Portfolio Revenue", f"${rfm_stats['total_revenue']:,.2f}", "Cumulative spending")
+                render_kpi("Total Portfolio Revenue", f"${rfm_stats['total_revenue']:,.2f}", "Cumulative transaction sum")
             with rkpi3:
-                render_kpi("Average Recency", f"{rfm_stats['avg_recency_days']} days", "Since last purchase")
+                render_kpi("Average Recency", f"{rfm_stats['avg_recency_days']} days", "Since last customer purchase")
             with rkpi4:
-                render_kpi("Average Frequency", f"{rfm_stats['avg_frequency']} orders", "Per customer")
+                render_kpi("Average Frequency", f"{rfm_stats['avg_frequency']} orders", "Purchases per customer")
 
             st.markdown("<br>", unsafe_allow_html=True)
 
@@ -273,11 +361,11 @@ with tab_rfm:
                 st.plotly_chart(fig_rfm_scatter, use_container_width=True)
 
             # Segment Summary Table
-            st.markdown("### 📋 RFM Segment Summary")
+            st.markdown("### 📋 RFM Segment Statistical Profiles")
             st.dataframe(rfm_stats["segment_summary"], use_container_width=True)
 
             # Customer drill down
-            st.markdown("### 🔍 Customer RFM Scores")
+            st.markdown("### 🔍 Customer RFM Individual Records")
             search_cust = st.text_input("Search Customer ID", placeholder="e.g. RET-1005")
             view_rfm = rfm_df
             if search_cust:

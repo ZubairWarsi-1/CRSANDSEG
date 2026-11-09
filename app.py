@@ -37,9 +37,10 @@ ds_name = st.session_state["dataset_name"]
 is_syn = st.session_state["is_synthetic"]
 
 if is_syn:
-    st.warning("⚠️ **Notice:** You are currently viewing a synthetic demonstration dataset. In production, connect real transactional or subscription data.")
+    st.warning("⚠️ **Notice:** You are currently viewing a synthetic test dataset (**Synthetic Test Data**). In production, connect real transactional or subscription data.")
 else:
-    st.success(f"✅ **Active Dataset:** Loaded authentic `{ds_name}` with **{len(df):,}** records and **{len(df.columns)}** features.")
+    source_class = st.session_state.get("dataset_source_class", "Benchmark Sample Dataset")
+    st.success(f"✅ **Active Dataset:** Loaded `{ds_name}` (*{source_class}*) with **{len(df):,}** records and **{len(df.columns)}** features.")
 
 # Executive Overview Columns
 st.markdown("### 🏛️ Platform Architecture & Analytical Capabilities")
