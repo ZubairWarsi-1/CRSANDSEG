@@ -15,6 +15,38 @@ DB_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data"))
 DB_PATH = os.path.join(DB_DIR, "customer360.db")
 
 
+class DbResultList(list):
+    """
+    Enhanced list supporting dataframe properties (.empty, .iterrows(), .columns)
+    for seamless compatibility between list and DataFrame consumers.
+    """
+    @property
+    def empty(self) -> bool:
+        return len(self) == 0
+
+    @property
+    def columns(self) -> List[str]:
+        if self and isinstance(self[0], dict):
+            return list(self[0].keys())
+        return []
+
+    def iterrows(self):
+        for idx, item in enumerate(self):
+            yield idx, pd.Series(item) if isinstance(item, dict) else item
+
+    def to_dataframe(self) -> pd.DataFrame:
+        if not self:
+            return pd.DataFrame()
+        return pd.DataFrame([dict(x) if isinstance(x, sqlite3.Row) else x for x in self])
+
+    def __getitem__(self, item):
+        if isinstance(item, (list, tuple)):
+            df = self.to_dataframe()
+            avail = [c for c in item if c in df.columns]
+            return df[avail] if avail else pd.DataFrame()
+        return super().__getitem__(item)
+
+
 def get_db_connection() -> sqlite3.Connection:
     """Creates a thread-safe connection to the SQLite database."""
     os.makedirs(DB_DIR, exist_ok=True)
@@ -249,15 +281,18 @@ def add_contact_history(
 
 def get_contact_history(customer_id: Optional[str] = None) -> List[Dict[str, Any]]:
     """Get contact history for a specific customer or all customers."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    if customer_id:
-        cursor.execute("SELECT * FROM contact_history WHERE customer_id = ? ORDER BY id DESC", (customer_id,))
-    else:
-        cursor.execute("SELECT * FROM contact_history ORDER BY id DESC")
-    rows = cursor.fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        if customer_id:
+            cursor.execute("SELECT * FROM contact_history WHERE customer_id = ? ORDER BY id DESC", (customer_id,))
+        else:
+            cursor.execute("SELECT * FROM contact_history ORDER BY id DESC")
+        rows = cursor.fetchall()
+        conn.close()
+        return DbResultList([dict(r) for r in rows])
+    except Exception:
+        return DbResultList([])
 
 
 # -------------------------------------------------------------------------
@@ -285,15 +320,18 @@ def add_retention_note(
 
 def get_retention_notes(customer_id: Optional[str] = None) -> List[Dict[str, Any]]:
     """Get retention notes for a customer or all records."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    if customer_id:
-        cursor.execute("SELECT * FROM retention_notes WHERE customer_id = ? ORDER BY id DESC", (customer_id,))
-    else:
-        cursor.execute("SELECT * FROM retention_notes ORDER BY id DESC")
-    rows = cursor.fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        if customer_id:
+            cursor.execute("SELECT * FROM retention_notes WHERE customer_id = ? ORDER BY id DESC", (customer_id,))
+        else:
+            cursor.execute("SELECT * FROM retention_notes ORDER BY id DESC")
+        rows = cursor.fetchall()
+        conn.close()
+        return DbResultList([dict(r) for r in rows])
+    except Exception:
+        return DbResultList([])
 
 
 # -------------------------------------------------------------------------
@@ -403,12 +441,25 @@ def log_upload_history(
 
 def get_upload_history() -> List[Dict[str, Any]]:
     """Retrieve history of uploaded datasets."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM upload_history ORDER BY id DESC")
-    rows = cursor.fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM upload_history ORDER BY id DESC")
+        rows = cursor.fetchall()
+        conn.close()
+        results = []
+        for r in rows:
+            d = dict(r)
+            if "upload_timestamp" in d and "uploaded_at" not in d:
+                d["uploaded_at"] = d["upload_timestamp"]
+            if "dataset_name" in d and "filename" not in d:
+                d["filename"] = d["dataset_name"]
+            if "dataset_source" in d and "dataset_type" not in d:
+                d["dataset_type"] = d["dataset_source"]
+            results.append(d)
+        return DbResultList(results)
+    except Exception:
+        return DbResultList([])
 
 
 # -------------------------------------------------------------------------

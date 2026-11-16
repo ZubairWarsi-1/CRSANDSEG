@@ -28,7 +28,7 @@ from src.validation import (
     clean_dataset,
     check_analytical_readiness
 )
-from src.database import log_dataset_upload, get_upload_history
+from src.database import log_dataset_upload, get_upload_history, get_upload_history_df
 from src.reporting import get_data_quality_df, export_dataframe_to_csv
 
 st.set_page_config(page_title="Data Upload & Audit — Customer360", page_icon="📁", layout="wide")
@@ -420,20 +420,28 @@ if not cols_df.empty:
 # -------------------------------------------------------------
 st.markdown("---")
 st.markdown("### 📜 Dataset Ingestion History (SQLite Database)")
-upload_history_df = get_upload_history()
+upload_history_raw = get_upload_history_df()
+if isinstance(upload_history_raw, pd.DataFrame):
+    upload_history_df = upload_history_raw
+elif hasattr(upload_history_raw, "to_dataframe"):
+    upload_history_df = upload_history_raw.to_dataframe()
+elif isinstance(upload_history_raw, list):
+    upload_history_df = pd.DataFrame(upload_history_raw)
+else:
+    upload_history_df = pd.DataFrame()
 
-if not upload_history_df.empty:
+if upload_history_df is not None and not upload_history_df.empty:
+    cols_to_show = [c for c in ["uploaded_at", "filename", "row_count", "col_count", "quality_score", "dataset_type"] if c in upload_history_df.columns]
+    rename_dict = {
+        "uploaded_at": "Timestamp",
+        "filename": "Filename",
+        "row_count": "Rows",
+        "col_count": "Columns",
+        "quality_score": "Quality Score",
+        "dataset_type": "Source Type"
+    }
     st.dataframe(
-        upload_history_df[["uploaded_at", "filename", "row_count", "col_count", "quality_score", "dataset_type"]].rename(
-            columns={
-                "uploaded_at": "Timestamp",
-                "filename": "Filename",
-                "row_count": "Rows",
-                "col_count": "Columns",
-                "quality_score": "Quality Score",
-                "dataset_type": "Source Type"
-            }
-        ),
+        upload_history_df[cols_to_show].rename(columns=rename_dict),
         use_container_width=True,
         hide_index=True
     )

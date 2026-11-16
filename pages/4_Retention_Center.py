@@ -34,8 +34,10 @@ from src.database import (
     get_all_interventions,
     log_contact_event,
     get_contact_history,
+    get_contact_history_df,
     add_retention_note,
     get_retention_notes,
+    get_retention_notes_df,
     record_retention_outcome,
     get_retention_outcomes,
     get_observed_retention_rate
@@ -316,9 +318,10 @@ if id_col in filtered_plan.columns and not filtered_plan.empty:
 
         # Display Existing History
         st.markdown("##### Historical Contact Timeline")
-        hist_df = get_contact_history(selected_customer)
-        if not hist_df.empty:
-            st.dataframe(hist_df[["contact_date", "channel", "outcome", "agent_name", "notes"]], use_container_width=True, hide_index=True)
+        hist_df = get_contact_history_df(selected_customer)
+        if hist_df is not None and not hist_df.empty:
+            cols_show = [c for c in ["contact_date", "channel", "outcome", "agent_name", "notes"] if c in hist_df.columns]
+            st.dataframe(hist_df[cols_show], use_container_width=True, hide_index=True)
         else:
             st.info("No prior contact events recorded for this customer in SQLite.")
 
@@ -336,8 +339,8 @@ if id_col in filtered_plan.columns and not filtered_plan.empty:
             st.rerun()
 
         st.markdown("##### Existing Customer Notes")
-        notes_df = get_retention_notes(selected_customer)
-        if not notes_df.empty:
+        notes_df = get_retention_notes_df(selected_customer)
+        if notes_df is not None and not notes_df.empty:
             for _, n_row in notes_df.iterrows():
                 st.markdown(
                     f"""
