@@ -133,3 +133,32 @@ st.markdown("---")
 st.markdown("### 📋 Active Dataset Preview")
 st.dataframe(df.head(5), use_container_width=True)
 
+st.markdown("---")
+
+# Project Team & Academic Credits Card
+st.markdown(
+    """
+    <div class="content-card" style="border-top: 4px solid #1E3A8A; margin-top: 1.5rem;">
+        <h4 style="margin: 0 0 0.4rem 0; color: #1E3A8A;">🎓 Project Developed By</h4>
+        <p style="font-size: 0.85rem; color: #64748B; margin-bottom: 0.8rem;">
+            Academic Capstone Project: <em>Customer360 — Customer Segmentation & Retention Intelligence Platform</em>
+        </p>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem;">
+            <div style="background: #F8FAFC; padding: 0.9rem; border-radius: 8px; border: 1px solid #E2E8F0;">
+                <div style="font-weight: 700; color: #0F172A; font-size: 1rem;">👤 Zubair Warsi</div>
+                <div style="color: #475569; font-size: 0.88rem; margin-top: 0.3rem;">Roll No: <code>2303410100057</code></div>
+            </div>
+            <div style="background: #F8FAFC; padding: 0.9rem; border-radius: 8px; border: 1px solid #E2E8F0;">
+                <div style="font-weight: 700; color: #0F172A; font-size: 1rem;">👤 Sameer Mansoori</div>
+                <div style="color: #475569; font-size: 0.88rem; margin-top: 0.3rem;">Roll No: <code>2303410100040</code></div>
+            </div>
+            <div style="background: #F8FAFC; padding: 0.9rem; border-radius: 8px; border: 1px solid #E2E8F0;">
+                <div style="font-weight: 700; color: #0F172A; font-size: 1rem;">👤 Mohd Shahbaaz Khan</div>
+                <div style="color: #475569; font-size: 0.88rem; margin-top: 0.3rem;">Roll No: <code>2303410100029</code></div>
+            </div>
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+

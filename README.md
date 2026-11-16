@@ -210,5 +210,15 @@ $$\text{Expected Monthly Exposure} = \sum_{i=1}^{N} (\text{MonthlyCharges}_i \ti
 
 ---
 
+## 👥 Project Team & Contributors
+
+| Contributor Name | Roll Number | Academic Role |
+| :--- | :--- | :--- |
+| **Zubair Warsi** | `2303410100057` | Lead Developer & Machine Learning Engineer |
+| **Sameer Mansoori** | `2303410100040` | Data Scientist & Feature Engineering Specialist |
+| **Mohd Shahbaaz Khan** | `2303410100029` | UI/UX Designer & Full-Stack Developer |
+
+---
+
 ## 📜 License
 This project is licensed under the **MIT License**. Created for academic and production machine learning excellence.

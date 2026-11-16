@@ -279,7 +279,26 @@ def render_sidebar():
         st.divider()
         st.markdown(
             """
-            <div style="font-size: 0.75rem; color: #94A3B8; text-align: center;">
+            <div style="padding: 0.75rem; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; font-size: 0.78rem;">
+                <div style="font-weight: 700; color: #1E3A8A; margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.5px; font-size: 0.72rem; text-align: center;">
+                    🎓 Project Contributors
+                </div>
+                <div style="color: #334155; line-height: 1.35;">
+                    <div style="margin-bottom: 0.4rem; padding-bottom: 0.35rem; border-bottom: 1px dashed #E2E8F0;">
+                        <strong style="color: #0F172A; font-size: 0.82rem;">Zubair Warsi</strong><br>
+                        <span style="color: #64748B;">Roll No: <code>2303410100057</code></span>
+                    </div>
+                    <div style="margin-bottom: 0.4rem; padding-bottom: 0.35rem; border-bottom: 1px dashed #E2E8F0;">
+                        <strong style="color: #0F172A; font-size: 0.82rem;">Sameer Mansoori</strong><br>
+                        <span style="color: #64748B;">Roll No: <code>2303410100040</code></span>
+                    </div>
+                    <div>
+                        <strong style="color: #0F172A; font-size: 0.82rem;">Mohd Shahbaaz Khan</strong><br>
+                        <span style="color: #64748B;">Roll No: <code>2303410100029</code></span>
+                    </div>
+                </div>
+            </div>
+            <div style="font-size: 0.70rem; color: #94A3B8; text-align: center; margin-top: 0.6rem;">
                 Customer360 v1.0.0<br>Production-Grade ML Intelligence
             </div>
             """,
