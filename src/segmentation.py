@@ -171,7 +171,7 @@ def generate_unique_cluster_name(
 ) -> str:
     """
     Generates a unique, data-driven, interpretable name for a cluster.
-    Compares cluster traits to overall population averages.
+    Compares cluster traits to overall population averages to identify key characteristics.
     """
     descriptors = []
 
@@ -179,10 +179,11 @@ def generate_unique_cluster_name(
     tenure_col = next((c for c in cluster_means.index if "tenure" in c.lower()), None)
     if tenure_col:
         t_val = cluster_means[tenure_col]
-        if t_val < 15:
+        t_overall = overall_means[tenure_col] if tenure_col in overall_means else 32.0
+        if t_val < 18 or t_val < t_overall * 0.6:
             descriptors.append("New / Early-Tenure")
-        elif t_val > 45:
-            descriptors.append("Long-Term Veteran")
+        elif t_val > 45 or t_val > t_overall * 1.3:
+            descriptors.append("Long-Tenure Loyalists")
         else:
             descriptors.append("Mid-Tenure")
 
@@ -190,9 +191,9 @@ def generate_unique_cluster_name(
     spend_col = next((c for c in cluster_means.index if "monthly" in c.lower() or "charge" in c.lower() or "spend" in c.lower() or "amount" in c.lower()), None)
     if spend_col:
         s_val = cluster_means[spend_col]
-        s_overall = overall_means[spend_col]
+        s_overall = overall_means[spend_col] if spend_col in overall_means else 65.0
         if s_val > s_overall * 1.15:
-            descriptors.append("High-Spending")
+            descriptors.append("High-Spenders")
         elif s_val < s_overall * 0.85:
             descriptors.append("Budget-Conscious")
         else:
@@ -200,11 +201,11 @@ def generate_unique_cluster_name(
 
     # Check TotalCharges / Value if available
     total_col = next((c for c in cluster_means.index if "total" in c.lower()), None)
-    if total_col and "Long-Term" in " ".join(descriptors) and "High-Spending" in " ".join(descriptors):
+    if total_col and "Long-Tenure Loyalists" in descriptors and "High-Spenders" in descriptors:
         descriptors = ["Premier High-Lifetime-Value"]
 
     if not descriptors:
-        base_name = f"Cluster {cluster_idx + 1}: Behavioral Cohort"
+        base_name = f"Cluster {cluster_idx + 1}: Behavioral Cohort {cluster_idx + 1}"
     else:
         base_name = f"Cluster {cluster_idx + 1}: {' '.join(descriptors)}"
 
@@ -292,6 +293,11 @@ def perform_kmeans_clustering(
     cluster_name_map = {}
     used_names: List[str] = []
 
+    # Detect primary business columns for summary table
+    tenure_col = next((c for c in df.columns if "tenure" in c.lower()), None)
+    mc_col = next((c for c in df.columns if ("monthly" in c.lower() or "charge" in c.lower() or "spend" in c.lower()) and "total" not in c.lower()), None)
+    tc_col = next((c for c in df.columns if "total" in c.lower() and ("charge" in c.lower() or "spend" in c.lower() or "amount" in c.lower())), None)
+
     for c in range(chosen_k):
         c_sub = res_df[res_df["Cluster"] == c]
         c_means = c_sub[feature_cols].mean()
@@ -309,8 +315,23 @@ def perform_kmeans_clustering(
             "CustomerPercentage": c_pct
         }
 
+        # Core business metrics
+        if tenure_col and tenure_col in df.columns:
+            t_num = pd.to_numeric(c_sub[tenure_col], errors="coerce")
+            prof_entry["Avg_Tenure"] = round(float(t_num.mean()), 1) if t_num.notna().sum() > 0 else 0.0
+
+        if mc_col and mc_col in df.columns:
+            m_num = pd.to_numeric(c_sub[mc_col], errors="coerce")
+            prof_entry["Avg_MonthlyCharges"] = round(float(m_num.mean()), 2) if m_num.notna().sum() > 0 else 0.0
+
+        if tc_col and tc_col in df.columns:
+            tc_num = pd.to_numeric(c_sub[tc_col], errors="coerce")
+            prof_entry["Avg_TotalCharges"] = round(float(tc_num.mean()), 2) if tc_num.notna().sum() > 0 else 0.0
+
+        # Features means
         for f in feature_cols:
-            prof_entry[f"Avg_{f}"] = round(float(c_means[f]), 2)
+            if f not in ["tenure", "MonthlyCharges", "TotalCharges"]:
+                prof_entry[f"Avg_{f}"] = round(float(c_means[f]), 2)
 
         # Cluster-wise Churn Analysis if valid target available
         churn_rate = None
@@ -320,6 +341,24 @@ def perform_kmeans_clustering(
             churn_rate = round((churn_count / max(1, c_count)) * 100, 1)
             prof_entry["HistoricalChurnCount"] = churn_count
             prof_entry["HistoricalChurnRate"] = churn_rate
+
+        # Calculate Key Differentiator compared to dataset averages
+        diffs = []
+        for f in feature_cols:
+            c_m = float(c_means[f])
+            o_m = float(overall_means[f])
+            if abs(o_m) > 1e-4:
+                pct_diff = ((c_m - o_m) / abs(o_m)) * 100
+                diffs.append((f, pct_diff, abs(pct_diff)))
+        diffs.sort(key=lambda x: x[2], reverse=True)
+        if diffs:
+            top_diffs = []
+            for f_name, pct, _ in diffs[:2]:
+                sign = "+" if pct > 0 else ""
+                top_diffs.append(f"{f_name} {sign}{pct:.1f}% vs avg")
+            prof_entry["Key Differentiator"] = "; ".join(top_diffs)
+        else:
+            prof_entry["Key Differentiator"] = "Baseline customer profile"
 
         action, action_reason = generate_cluster_recommendation(prof_entry, churn_rate)
         prof_entry["RecommendedStrategy"] = action

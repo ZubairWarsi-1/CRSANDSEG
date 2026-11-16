@@ -13,8 +13,42 @@ def inspect_dataset(df: pd.DataFrame, id_col: Optional[str] = None) -> Dict[str,
     """
     Perform a comprehensive health check and structural inspection of a DataFrame.
     Includes duplicate IDs, negative monetary checks, impossible tenure, constant columns,
-    and outlier detection.
+    inconsistent data types, invalid target labels, and outlier detection.
+    Guarantees consistent schema and never raises KeyError on any metric field.
     """
+    if df is None or not isinstance(df, pd.DataFrame) or df.empty or len(df.columns) == 0:
+        row_count = len(df) if isinstance(df, pd.DataFrame) else 0
+        col_count = len(df.columns) if isinstance(df, pd.DataFrame) else 0
+        return {
+            "row_count": row_count,
+            "col_count": col_count,
+            "total_records": row_count,
+            "total_features": col_count,
+            "memory_mb": 0.0,
+            "duplicate_count": 0,
+            "duplicate_records": 0,
+            "duplicate_pct": 0.0,
+            "duplicate_ids": 0,
+            "total_missing_cells": 0,
+            "missing_pct": 0.0,
+            "missing_percentage": 0.0,
+            "columns_info": [],
+            "numeric_cols": [],
+            "categorical_cols": [],
+            "date_cols": [],
+            "constant_cols": [],
+            "negative_value_cols": [],
+            "impossible_tenure_count": 0,
+            "inconsistent_type_cols": [],
+            "outlier_counts": {},
+            "quality_score": 0.0,
+            "grade": "Poor",
+            "grade_color": "red",
+            "deductions": ["Empty dataset: 0 rows or 0 columns detected."],
+            "is_valid": False,
+            "validation_message": "Dataset contains 0 rows or 0 columns."
+        }
+
     row_count, col_count = df.shape
     duplicate_rows = int(df.duplicated().sum())
     duplicate_pct = round((duplicate_rows / max(1, row_count)) * 100, 2)
@@ -26,9 +60,11 @@ def inspect_dataset(df: pd.DataFrame, id_col: Optional[str] = None) -> Dict[str,
     date_cols = []
     constant_cols = []
     outlier_counts = {}
+    inconsistent_type_cols = []
 
-    total_missing_cells = 0
+    total_missing_cells = int(df.isna().sum().sum())
     total_cells = row_count * col_count
+    missing_pct = round((total_missing_cells / max(1, total_cells)) * 100, 2)
 
     # Check duplicate customer IDs if an ID column is specified or detected
     duplicate_ids = 0
@@ -47,13 +83,16 @@ def inspect_dataset(df: pd.DataFrame, id_col: Optional[str] = None) -> Dict[str,
     for col in df.columns:
         series = df[col]
         missing_count = int(series.isna().sum())
-        total_missing_cells += missing_count
-        missing_pct = round((missing_count / max(1, row_count)) * 100, 2)
+        col_missing_pct = round((missing_count / max(1, row_count)) * 100, 2)
         unique_count = int(series.nunique(dropna=True))
+        invalid_count = 0
+        is_inconsistent = False
+        is_constant = False
 
         # Constant column check
         if unique_count <= 1 and row_count > 1:
             constant_cols.append(col)
+            is_constant = True
 
         # Check date
         is_date = False
@@ -79,10 +118,14 @@ def inspect_dataset(df: pd.DataFrame, id_col: Optional[str] = None) -> Dict[str,
                 neg_count = int((series < 0).sum())
                 if neg_count > 0:
                     negative_value_cols.append({"column": col, "negative_count": neg_count})
+                    invalid_count += neg_count
 
             # Check impossible tenure (< 0 or > 120 months)
             if "tenure" in col.lower():
-                impossible_tenure_count += int(((series < 0) | (series > 120)).sum())
+                imp_t = int(((series < 0) | (series > 120)).sum())
+                if imp_t > 0:
+                    impossible_tenure_count += imp_t
+                    invalid_count += imp_t
 
             # Outlier detection using IQR (values beyond Q1 - 3*IQR or Q3 + 3*IQR)
             non_null = series.dropna()
@@ -96,8 +139,29 @@ def inspect_dataset(df: pd.DataFrame, id_col: Optional[str] = None) -> Dict[str,
                         outlier_counts[col] = outliers
 
         else:
-            categorical_cols.append(col)
+            # Categorical or potential inconsistent numeric string
             dtype_label = "categorical"
+            categorical_cols.append(col)
+
+            # Check if this object column is predominantly numeric with whitespace or invalid text (e.g. TotalCharges)
+            non_null_text = series.dropna().astype(str).str.strip().str.replace("$", "", regex=False).str.replace(",", "", regex=False)
+            non_empty_text = non_null_text[non_null_text != ""]
+            if len(non_empty_text) > 0:
+                numeric_converted = pd.to_numeric(non_empty_text, errors="coerce")
+                valid_num_count = int(numeric_converted.notna().sum())
+                num_ratio = valid_num_count / len(non_empty_text)
+                
+                # Exclude obvious binary labels like Yes/No or True/False
+                is_binary_label = set(non_empty_text.str.lower().unique()).issubset({"yes", "no", "true", "false", "churn", "churned", "0", "1"})
+                if num_ratio >= 0.70 and not is_binary_label and valid_num_count < len(series):
+                    unparseable_cnt = len(series) - valid_num_count
+                    invalid_count += unparseable_cnt
+                    is_inconsistent = True
+                    inconsistent_type_cols.append({
+                        "column": col,
+                        "invalid_count": unparseable_cnt,
+                        "reason": f"Column '{col}' is stored as text but contains predominantly numeric values ({unparseable_cnt} unparseable whitespace/symbols)."
+                    })
 
         samples = series.dropna().unique()[:3].tolist()
         columns_info.append({
@@ -105,8 +169,11 @@ def inspect_dataset(df: pd.DataFrame, id_col: Optional[str] = None) -> Dict[str,
             "type": dtype_label,
             "raw_dtype": str(series.dtype),
             "missing_count": missing_count,
-            "missing_pct": missing_pct,
+            "missing_pct": col_missing_pct,
             "unique_count": unique_count,
+            "invalid_count": invalid_count,
+            "is_inconsistent": is_inconsistent,
+            "is_constant": is_constant,
             "samples": [str(s) for s in samples]
         })
 
@@ -114,44 +181,74 @@ def inspect_dataset(df: pd.DataFrame, id_col: Optional[str] = None) -> Dict[str,
     score = 100.0
     deductions = []
 
+    # 1. Missing cells deduction
     missing_ratio = (total_missing_cells / max(1, total_cells)) if total_cells > 0 else 0
     missing_deduction = round(missing_ratio * 40.0, 1)
     if missing_deduction > 0:
         score -= missing_deduction
         deductions.append(f"Missing Values: -{missing_deduction} pts ({missing_ratio*100:.1f}% empty cells)")
 
+    # 2. Duplicate rows deduction
     dup_ratio = (duplicate_rows / max(1, row_count)) if row_count > 0 else 0
     dup_deduction = round(dup_ratio * 25.0, 1)
     if dup_deduction > 0:
         score -= dup_deduction
         deductions.append(f"Duplicate Rows: -{dup_deduction} pts ({duplicate_rows} duplicate rows)")
 
+    # 3. Duplicate IDs deduction
     if duplicate_ids > 0:
         id_dup_deduction = round(min(15.0, (duplicate_ids / max(1, row_count)) * 25.0), 1)
         score -= id_dup_deduction
         deductions.append(f"Duplicate Customer IDs: -{id_dup_deduction} pts ({duplicate_ids} non-unique IDs)")
 
+    # 4. Zero-variance / Constant columns deduction
     if constant_cols:
-        score -= min(10.0, len(constant_cols) * 2.0)
-        deductions.append(f"Zero-Variance Columns: -{min(10.0, len(constant_cols) * 2.0)} pts ({len(constant_cols)} columns)")
+        const_ded = min(10.0, len(constant_cols) * 2.5)
+        score -= const_ded
+        deductions.append(f"Zero-Variance Columns: -{const_ded} pts ({len(constant_cols)} uninformative columns)")
 
+    # 5. Inconsistent data types deduction
+    if inconsistent_type_cols:
+        incon_ded = min(15.0, len(inconsistent_type_cols) * 5.0)
+        score -= incon_ded
+        incon_names = ", ".join([c["column"] for c in inconsistent_type_cols[:3]])
+        deductions.append(f"Inconsistent Numeric Types: -{incon_ded} pts ({incon_names} contain text/spaces)")
+
+    # 6. Negative financial values deduction
     if negative_value_cols:
         score -= 5.0
-        deductions.append("Negative Financial Values: -5.0 pts")
+        deductions.append(f"Negative Financial Values: -5.0 pts ({len(negative_value_cols)} columns with negative amounts)")
 
+    # 7. Impossible tenure values deduction
     if impossible_tenure_count > 0:
         score -= 5.0
         deductions.append(f"Impossible Tenure (>120 or <0): -5.0 pts ({impossible_tenure_count} records)")
 
+    # 8. Sample size constraint (< 30 rows cannot be Grade Excellent)
+    if row_count < 30:
+        score -= 10.0
+        deductions.append(f"Small Sample Size ({row_count} rows < 30): -10.0 pts (Insufficient for robust ML training)")
+
+    # 9. Critical defects ceiling: Critical issues prevent Grade Excellent (cap score at 89.0)
+    has_critical_defects = bool(
+        inconsistent_type_cols or
+        (duplicate_ids > 0) or
+        (impossible_tenure_count > 0) or
+        negative_value_cols or
+        (missing_pct >= 5.0)
+    )
+    if has_critical_defects and score > 89.0:
+        score = 89.0
+
     quality_score = max(0.0, min(100.0, round(score, 1)))
 
-    if quality_score >= 85:
+    if quality_score >= 90:
         grade = "Excellent"
         grade_color = "green"
-    elif quality_score >= 70:
+    elif quality_score >= 80:
         grade = "Good"
         grade_color = "blue"
-    elif quality_score >= 50:
+    elif quality_score >= 70:
         grade = "Fair"
         grade_color = "orange"
     else:
@@ -161,11 +258,16 @@ def inspect_dataset(df: pd.DataFrame, id_col: Optional[str] = None) -> Dict[str,
     return {
         "row_count": row_count,
         "col_count": col_count,
+        "total_records": row_count,
+        "total_features": col_count,
         "memory_mb": memory_mb,
         "duplicate_count": duplicate_rows,
+        "duplicate_records": duplicate_rows,
         "duplicate_pct": duplicate_pct,
         "duplicate_ids": duplicate_ids,
         "total_missing_cells": total_missing_cells,
+        "missing_pct": missing_pct,
+        "missing_percentage": missing_pct,
         "columns_info": columns_info,
         "numeric_cols": numeric_cols,
         "categorical_cols": categorical_cols,
@@ -173,19 +275,24 @@ def inspect_dataset(df: pd.DataFrame, id_col: Optional[str] = None) -> Dict[str,
         "constant_cols": constant_cols,
         "negative_value_cols": negative_value_cols,
         "impossible_tenure_count": impossible_tenure_count,
+        "inconsistent_type_cols": inconsistent_type_cols,
         "outlier_counts": outlier_counts,
         "quality_score": quality_score,
         "grade": grade,
         "grade_color": grade_color,
-        "deductions": deductions
+        "deductions": deductions,
+        "is_valid": True,
+        "validation_message": "Dataset inspection completed successfully."
     }
 
 
-def calculate_transparent_quality_score(df: pd.DataFrame) -> Dict[str, Any]:
+
+def calculate_transparent_quality_score(df: pd.DataFrame, id_col: Optional[str] = None) -> Dict[str, Any]:
     """
-    Calculate transparent data quality score with deductions breakdown and grade.
+    Calculate transparent data quality score with deductions breakdown, grade,
+    detailed audit findings, and analytical task readiness.
     """
-    res = inspect_dataset(df)
+    res = inspect_dataset(df, id_col=id_col)
     formatted_deductions = []
     for d in res["deductions"]:
         parts = d.split(":")
@@ -195,14 +302,52 @@ def calculate_transparent_quality_score(df: pd.DataFrame) -> Dict[str, Any]:
             "penalty": title,
             "reason": detail
         })
+
+    # Structured analyses
+    roles = infer_column_roles(df) if (df is not None and not df.empty) else {}
+    readiness = check_analytical_readiness(df, roles) if (df is not None and not df.empty) else {}
+
+    missing_cols = [c["name"] for c in res["columns_info"] if c["missing_count"] > 0]
+    inconsistent_cols = [c["name"] for c in res["columns_info"] if c.get("is_inconsistent", False)]
+
+    score_val = res["quality_score"]
+    if score_val >= 90:
+        explanation = "High-integrity dataset (Grade: Excellent) suitable for machine learning and statistical modeling with minimal cleaning."
+    elif score_val >= 80:
+        explanation = "Acceptable dataset quality (Grade: Good) with mild defects (missing values or format inconsistencies) that should be addressed before modeling."
+    elif score_val >= 70:
+        explanation = "Moderate data quality (Grade: Fair) with notable missing cells, format issues, or small sample size requiring data cleaning."
+    else:
+        explanation = "Critical data defects detected (Grade: Poor). Automated and manual data cleaning required before reliable analysis."
+
     return {
-        "quality_score": res["quality_score"],
+        "quality_score": score_val,
         "grade": res["grade"],
         "grade_color": res["grade_color"],
+        "grade_description": explanation,
         "deductions": formatted_deductions,
         "raw_deductions": res["deductions"],
+        "missing_analysis": {
+            "total_missing": res["total_missing_cells"],
+            "missing_pct": res["missing_pct"],
+            "columns_with_missing": missing_cols,
+            "missing_cols_count": len(missing_cols)
+        },
+        "duplicate_analysis": {
+            "duplicate_rows": res["duplicate_count"],
+            "duplicate_pct": res["duplicate_pct"],
+            "duplicate_ids": res["duplicate_ids"]
+        },
+        "invalid_analysis": {
+            "negative_financial_cols": res["negative_value_cols"],
+            "impossible_tenure_count": res["impossible_tenure_count"],
+            "inconsistent_type_cols": inconsistent_cols,
+            "zero_variance_cols": res["constant_cols"]
+        },
+        "readiness": readiness,
         "inspection": res
     }
+
 
 
 
@@ -218,9 +363,23 @@ def clean_dataset(
     Clean dataset according to user configurations while preserving the original.
     Returns: (cleaned_df, cleaning_summary)
     """
+    if df is None or not isinstance(df, pd.DataFrame) or df.empty or len(df.columns) == 0:
+        return pd.DataFrame(), {
+            "initial_rows": 0,
+            "final_rows": 0,
+            "initial_missing": 0,
+            "final_missing": 0,
+            "duplicates_removed": 0,
+            "missing_imputed": 0,
+            "types_corrected": 0,
+            "outliers_capped": 0,
+            "categories_normalized": 0
+        }
+
     cleaned = df.copy()
     initial_rows = len(cleaned)
     initial_missing = int(cleaned.isna().sum().sum())
+
 
     summary = {
         "initial_rows": initial_rows,

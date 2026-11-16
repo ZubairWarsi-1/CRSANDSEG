@@ -33,10 +33,11 @@ from src.database import log_report_generation
 
 
 def export_dataframe_to_csv(df: pd.DataFrame) -> bytes:
-    """Serialize a pandas DataFrame into utf-8 encoded CSV bytes for download."""
+    """Serialize a pandas DataFrame into utf-8-sig encoded CSV bytes for Excel compatibility."""
     buffer = io.StringIO()
-    df.to_csv(buffer, index=False, encoding="utf-8")
-    return buffer.getvalue().encode("utf-8")
+    df.to_csv(buffer, index=False, encoding="utf-8-sig")
+    return buffer.getvalue().encode("utf-8-sig")
+
 
 
 def export_multi_sheet_excel(sheets_dict: Dict[str, pd.DataFrame]) -> bytes:
@@ -422,8 +423,63 @@ def generate_data_quality_markdown(inspection: Dict[str, Any]) -> str:
 
 
 def get_data_quality_df(inspection: Dict[str, Any]) -> pd.DataFrame:
-    """Convert column inspection details into a DataFrame for export."""
+    """
+    Convert column inspection details into a comprehensive DataFrame for display and CSV export.
+    Directly satisfies the Export 6 contract:
+    - Column name, Data type, Missing count, Missing percentage, Duplicate information,
+      Invalid-value count, Cleaning action, Validation status.
+    """
     cols = inspection.get("columns_info", [])
     if not cols:
-        return pd.DataFrame()
-    return pd.DataFrame(cols)
+        return pd.DataFrame(columns=[
+            "Column Name", "Data Type", "Missing Count", "Missing Percentage",
+            "Duplicate Information", "Invalid Values Count", "Cleaning Action", "Validation Status"
+        ])
+
+    rows = []
+    row_count = inspection.get("row_count", 0)
+    for c in cols:
+        c_name = str(c.get("name", ""))
+        c_type = str(c.get("type", "unknown"))
+        m_cnt = int(c.get("missing_count", 0))
+        m_pct = float(c.get("missing_pct", 0.0))
+        u_cnt = int(c.get("unique_count", 0))
+        inv_cnt = int(c.get("invalid_count", 0))
+        is_incon = bool(c.get("is_inconsistent", False))
+        is_const = bool(c.get("is_constant", False))
+
+        # Duplicate information
+        if row_count > u_cnt:
+            dup_info = f"{row_count - u_cnt} duplicate rows ({u_cnt} unique)"
+        else:
+            dup_info = "All values unique"
+
+        # Cleaning action & validation status
+        status = "Valid"
+        action = "None required"
+
+        if m_cnt > 0:
+            status = f"Warning: {m_pct}% Missing"
+            action = "Impute median" if c_type == "numeric" else "Impute mode"
+
+        if is_incon or inv_cnt > 0:
+            status = "Warning: Inconsistent Type / Invalid Values"
+            action = "Strip text and convert to numeric"
+
+        if is_const:
+            status = "Warning: Zero Variance"
+            action = "Remove constant column"
+
+        rows.append({
+            "Column Name": c_name,
+            "Data Type": c_type,
+            "Missing Count": m_cnt,
+            "Missing Percentage": f"{m_pct:.1f}%",
+            "Duplicate Information": dup_info,
+            "Invalid Values Count": inv_cnt,
+            "Cleaning Action": action,
+            "Validation Status": status
+        })
+
+    return pd.DataFrame(rows)
+

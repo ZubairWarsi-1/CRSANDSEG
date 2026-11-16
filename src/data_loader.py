@@ -14,7 +14,7 @@ TELCO_DATA_PATH = os.path.join(DATA_DIR, "telco_customer_churn.csv")
 RETAIL_DATA_PATH = os.path.join(DATA_DIR, "retail_transactions.csv")
 
 
-def load_dataset(file_or_path: Union[str, os.PathLike, object]) -> pd.DataFrame:
+def load_dataset(file_or_path: Union[str, os.PathLike, object], clean_whitespace_numeric: bool = False) -> pd.DataFrame:
     """
     Safely load a CSV dataset from a file path or uploaded buffer.
     Attempts multiple encodings and handles whitespace/delimiter variations.
@@ -39,14 +39,15 @@ def load_dataset(file_or_path: Union[str, os.PathLike, object]) -> pd.DataFrame:
     # Standardize column headers: strip whitespace
     df.columns = [str(col).strip() for col in df.columns]
 
-    # Clean known edge cases (e.g. Telco TotalCharges whitespace strings)
-    for col in df.columns:
-        if df[col].dtype == object:
-            # Check if column contains mostly numbers with empty spaces
-            cleaned_num = pd.to_numeric(df[col].astype(str).str.strip(), errors="coerce")
-            # If over 80% non-null numeric after conversion and original had nulls/spaces
-            if cleaned_num.notna().sum() > 0.8 * len(df) and df[col].nunique() > 10:
-                df[col] = cleaned_num
+    # Optional: clean known edge cases (e.g. TotalCharges whitespace strings)
+    if clean_whitespace_numeric:
+        for col in df.columns:
+            if df[col].dtype == object:
+                # Check if column contains mostly numbers with empty spaces
+                cleaned_num = pd.to_numeric(df[col].astype(str).str.strip(), errors="coerce")
+                # If over 80% non-null numeric after conversion and original had nulls/spaces
+                if cleaned_num.notna().sum() > 0.8 * len(df) and df[col].nunique() > 10:
+                    df[col] = cleaned_num
 
     return df
 

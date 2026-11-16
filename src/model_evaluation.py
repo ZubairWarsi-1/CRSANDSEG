@@ -243,6 +243,8 @@ def compare_models_advanced(
             "Test F1-Score": test_eval["f1_score"],
             "ROC-AUC": test_eval["roc_auc"],
             "Test ROC-AUC": test_eval["roc_auc"],
+            "PR-AUC": test_eval["pr_auc"],
+            "Test PR-AUC": test_eval["pr_auc"],
             "CV F1 (5-Fold)": f"{cv_f1:.3f} ± {cv_f1_std:.3f}" if cv_f1_std > 0 else f"{cv_f1:.3f}",
             "Train Accuracy": train_eval["accuracy"],
             "Train F1": train_f1,

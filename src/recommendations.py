@@ -191,10 +191,14 @@ def generate_customer_recommendation(
             action = "Standard Nurturing"
             reason = f"Healthy customer relationship with low churn probability ({round(churn_prob*100, 1)}%). Maintain standard lifecycle communications."
 
+    p_level = "High" if priority_score >= 65 else ("Medium" if priority_score >= 35 else "Low")
+
     return {
         "Recommended_Action": action,
+        "Retention_Action": action,
         "Recommendation_Reason": reason,
         "Priority_Score": priority_score,
+        "Priority_Level": p_level,
         "Priority_Breakdown": priority_breakdown,
         "Revenue_at_Risk": revenue_at_risk,
         "Action_Status": "Pending"

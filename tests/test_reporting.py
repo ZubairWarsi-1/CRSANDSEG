@@ -31,5 +31,6 @@ def test_generate_data_quality_markdown():
 
     cols_df = get_data_quality_df(inspection)
     assert len(cols_df) == 1
-    assert "name" in cols_df.columns
+    assert "Column Name" in cols_df.columns
+    assert "Validation Status" in cols_df.columns
 

@@ -373,16 +373,18 @@ def explain_customer_risk(
 def simulate_customer_churn(
     pipeline: Pipeline,
     original_row: pd.Series,
-    modifications: Dict[str, Any],
+    modifications: Optional[Dict[str, Any]] = None,
     id_cols: Optional[List[str]] = None,
-    target_col: Optional[str] = None
+    target_col: Optional[str] = None,
+    changes: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
     What-If Simulator: Recalculates churn probability through the exact pipeline
     when customer attributes (e.g. Contract, MonthlyCharges, Tenure) are modified.
     """
+    mods = modifications if modifications is not None else (changes or {})
     modified_row = original_row.copy()
-    for key, val in modifications.items():
+    for key, val in mods.items():
         if key in modified_row:
             modified_row[key] = val
 
@@ -400,7 +402,9 @@ def simulate_customer_churn(
     return {
         "original_probability": orig_prob,
         "modified_probability": mod_prob,
+        "simulated_probability": mod_prob,
         "probability_diff": diff,
+        "risk_delta": diff,
         "original_risk": orig_pred["Risk_Category"].iloc[0],
         "modified_risk": mod_pred["Risk_Category"].iloc[0]
     }

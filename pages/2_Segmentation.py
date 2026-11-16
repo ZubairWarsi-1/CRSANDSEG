@@ -143,17 +143,42 @@ with tab_kmeans:
 
                 with plot_col1:
                     st.markdown("#### 🗺️ 2D PCA Cluster Map")
+                    
+                    # Build rich hover tooltip fields
+                    hover_cols = []
+                    if roles.get("id_col") and roles["id_col"] in res_df.columns:
+                        hover_cols.append(roles["id_col"])
+                    for c_term in ["tenure", "monthlycharges", "totalcharges"]:
+                        match = next((col for col in res_df.columns if c_term == col.lower() or c_term in col.lower()), None)
+                        if match and match not in hover_cols:
+                            hover_cols.append(match)
+                    if roles.get("target_col") and roles["target_col"] in res_df.columns and roles["target_col"] not in hover_cols:
+                        hover_cols.append(roles["target_col"])
+                    for f in selected_features:
+                        if f not in hover_cols:
+                            hover_cols.append(f)
+
                     fig_pca = px.scatter(
                         res_df,
                         x="PCA1",
                         y="PCA2",
                         color="ClusterName",
-                        hover_data=[roles["id_col"]] + selected_features if roles["id_col"] else selected_features,
-                        title=f"Customer Clusters Projected on First 2 Principal Components ({sum(pca_var):.1f}% Total Variance)",
+                        hover_data=hover_cols,
+                        labels={
+                            "PCA1": f"Principal Component 1 ({pca_var[0]}% Variance)",
+                            "PCA2": f"Principal Component 2 ({pca_var[1]}% Variance)",
+                            "ClusterName": "Cohort"
+                        },
+                        title=f"Customer Clusters Projected on 2D Principal Components ({sum(pca_var):.1f}% Total Variance)",
                         color_discrete_sequence=[COLOR_PRIMARY, COLOR_SUCCESS, COLOR_WARNING, COLOR_DANGER, COLOR_ACCENT, COLOR_SECONDARY]
                     )
                     fig_pca.update_layout(get_plotly_layout(height=420))
                     st.plotly_chart(fig_pca, use_container_width=True)
+                    st.caption(
+                        "💡 **What do Principal Components represent?** "
+                        "Principal Component Analysis (PCA) mathematically projects high-dimensional customer attributes into orthogonal (uncorrelated) 2D axes capturing maximum variance. "
+                        "**PC1** and **PC2** are linear combinations of all normalized features, not single raw variables in isolation. Spatial distance indicates multi-dimensional behavioral similarity."
+                    )
 
                 with plot_col2:
                     st.markdown("#### 📉 Elbow (Inertia) & Silhouette Diagnostics")
@@ -225,6 +250,7 @@ with tab_kmeans:
                     c_name = p_row["ClusterName"]
                     c_cnt = p_row["CustomerCount"]
                     c_pct = p_row["CustomerPercentage"]
+                    c_diff = p_row.get("Key Differentiator", "N/A")
                     c_strat = p_row.get("RecommendedStrategy", "N/A")
                     c_rat = p_row.get("StrategyRationale", "N/A")
                     c_churn = f"{p_row.get('HistoricalChurnRate', 0.0):.1f}%" if "HistoricalChurnRate" in p_row else "N/A"
@@ -236,16 +262,43 @@ with tab_kmeans:
                                 <h5 style="margin: 0; color: #1E293B;">🏷️ {c_name}</h5>
                                 <span class="badge badge-info">{c_cnt:,} customers ({c_pct}%) | Historical Churn: {c_churn}</span>
                             </div>
-                            <p style="margin: 0.4rem 0 0.2rem 0; font-size: 0.88rem; color: #059669;"><strong>Recommended Action:</strong> {c_strat}</p>
+                            <p style="margin: 0.4rem 0 0.2rem 0; font-size: 0.85rem; color: #1E40AF;"><strong>Key Differentiator:</strong> {c_diff}</p>
+                            <p style="margin: 0 0 0.2rem 0; font-size: 0.88rem; color: #059669;"><strong>Recommended Action:</strong> {c_strat}</p>
                             <p style="margin: 0; font-size: 0.84rem; color: #64748B;"><strong>Business Rationale:</strong> {c_rat}</p>
                         </div>
                         """,
                         unsafe_allow_html=True
                     )
 
-                # Cluster Profiles Full Table
-                st.markdown("### 📋 Cluster Statistical Summary")
-                st.dataframe(profiles_df, use_container_width=True, hide_index=True)
+                # Cluster Profiles Full Table with core business columns
+                st.markdown("### 📋 Cluster Statistical Summary Table")
+                summary_display_cols = ["Cluster", "ClusterName", "CustomerCount", "CustomerPercentage"]
+                if "Avg_Tenure" in profiles_df.columns:
+                    summary_display_cols.append("Avg_Tenure")
+                if "Avg_MonthlyCharges" in profiles_df.columns:
+                    summary_display_cols.append("Avg_MonthlyCharges")
+                if "Avg_TotalCharges" in profiles_df.columns:
+                    summary_display_cols.append("Avg_TotalCharges")
+                if "HistoricalChurnRate" in profiles_df.columns:
+                    summary_display_cols.append("HistoricalChurnRate")
+                if "Key Differentiator" in profiles_df.columns:
+                    summary_display_cols.append("Key Differentiator")
+                if "RecommendedStrategy" in profiles_df.columns:
+                    summary_display_cols.append("RecommendedStrategy")
+
+                renamed_profiles = profiles_df[summary_display_cols].rename(columns={
+                    "Cluster": "Cluster ID",
+                    "ClusterName": "Cluster Name",
+                    "CustomerCount": "Customer Count",
+                    "CustomerPercentage": "Share (%)",
+                    "Avg_Tenure": "Avg Tenure (Mo)",
+                    "Avg_MonthlyCharges": "Avg Monthly Spend ($)",
+                    "Avg_TotalCharges": "Avg Total Spend ($)",
+                    "HistoricalChurnRate": "Churn Rate (%)",
+                    "Key Differentiator": "Key Differentiator",
+                    "RecommendedStrategy": "Recommended Action"
+                })
+                st.dataframe(renamed_profiles, use_container_width=True, hide_index=True)
 
                 # Drill down customer table
                 st.markdown("### 🔎 Customer Record Drill-Down")

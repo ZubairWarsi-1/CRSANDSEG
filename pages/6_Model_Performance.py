@@ -131,6 +131,12 @@ st.markdown("<br>", unsafe_allow_html=True)
 selected_model_name = st.selectbox("Select Model for Detailed Diagnostic Deep-Dive", list(trained_models.keys()))
 active_meta = trained_models[selected_model_name]
 
+# Small sample size and class imbalance warning
+n_test = len(active_meta["y_test"])
+churn_test = int(np.sum(active_meta["y_test"] == 1))
+if n_test < 50 or churn_test < 10:
+    st.warning(f"⚠️ **Small Sample Size Alert:** Test set contains only N={n_test:,} samples with {churn_test} positive churn events. Evaluated performance metrics may exhibit higher statistical variance.")
+
 train_eval = evaluate_classification_model(
     active_meta["y_train"], active_meta["y_train_pred"], active_meta["y_train_prob"], dataset_label="Train Set"
 )
@@ -227,7 +233,7 @@ with col_d3:
         baseline_rate = float(np.mean(active_meta["y_test"]))
         fig_pr.add_trace(go.Scatter(
             x=[0, 1], y=[baseline_rate, baseline_rate],
-            name=f"No-Skill Baseline ({baseline_rate:.2f})",
+            name=f"No-Skill Baseline ({baseline_rate:.3f})",
             line=dict(color="#94A3B8", width=1.5, dash="dash")
         ))
         fig_pr.update_layout(
@@ -238,6 +244,70 @@ with col_d3:
         st.plotly_chart(fig_pr, use_container_width=True)
     else:
         st.info("PR curve data unavailable.")
+
+# Educational callout explaining ROC-AUC vs PR-AUC
+baseline_rate = float(np.mean(active_meta["y_test"]))
+st.markdown(
+    f"""
+    <div class="content-card" style="margin: 1rem 0; border-left: 4px solid #3B82F6;">
+        <h5 style="margin: 0 0 0.4rem 0; color: #1E293B;">📘 Why ROC-AUC and PR-AUC Differ on Imbalanced Churn Data</h5>
+        <p style="font-size: 0.88rem; color: #334155; margin-bottom: 0.4rem;">
+            Customer churn datasets are typically imbalanced. This imbalance creates important behavioral differences between ROC-AUC and PR-AUC:
+        </p>
+        <ul style="font-size: 0.85rem; color: #475569; padding-left: 1.2rem; margin-bottom: 0.4rem;">
+            <li><strong>ROC-AUC (Receiver Operating Characteristic):</strong> Plots True Positive Rate against False Positive Rate. Because the majority retained class makes the denominator (FP + TN) very large, a high number of false positives yields a small FPR, making ROC-AUC appear optimistic even when false alarms are common. The random baseline is always <strong>0.50</strong>.</li>
+            <li><strong>PR-AUC (Precision-Recall Area):</strong> Plots Precision against Recall. It focuses exclusively on the minority positive churn class without being diluted by true negatives. The random baseline is equal to the <strong>positive class prevalence</strong> in the test set (<strong>{baseline_rate:.1%}</strong>).</li>
+            <li><strong>Operational Recommendation:</strong> When evaluating churn interventions with limited retention budgets, <strong>PR-AUC</strong> provides the more faithful measure of real-world effectiveness.</li>
+        </ul>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
+st.markdown("<br>", unsafe_allow_html=True)
+
+# -------------------------------------------------------------
+# Section 4B: Threshold Tuning & Sensitivity Analysis
+# -------------------------------------------------------------
+st.markdown("### 🎚️ Decision Threshold Analysis & Sensitivity Tuning")
+st.caption("Evaluate how varying the classification decision threshold impacts Precision, Recall, and False Alarms.")
+
+from src.model_evaluation import evaluate_at_threshold
+
+threshold_evals = []
+for t in [0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80]:
+    t_res = evaluate_at_threshold(active_meta["y_test"], active_meta["y_test_prob"], threshold=t)
+    cm_t = t_res["confusion_matrix"]
+    threshold_evals.append({
+        "Threshold": f"{t:.2f}",
+        "Accuracy": f"{t_res['accuracy']*100:.1f}%",
+        "Precision": f"{t_res['precision']*100:.1f}%",
+        "Recall": f"{t_res['recall']*100:.1f}%",
+        "F1-Score": f"{t_res['f1_score']:.3f}",
+        "TP (Caught Churners)": f"{cm_t['tp']:,}",
+        "FP (False Alarms)": f"{cm_t['fp']:,}",
+        "FN (Missed Churners)": f"{cm_t['fn']:,}"
+    })
+
+th_df = pd.DataFrame(threshold_evals)
+st.dataframe(th_df, use_container_width=True, hide_index=True)
+
+# Custom threshold slider
+custom_th = st.slider("Interactive Threshold Explorer", min_value=0.10, max_value=0.90, value=0.50, step=0.05)
+cust_res = evaluate_at_threshold(active_meta["y_test"], active_meta["y_test_prob"], threshold=custom_th)
+c_cm = cust_res["confusion_matrix"]
+
+ct1, ct2, ct3, ct4 = st.columns(4)
+with ct1:
+    render_kpi(f"Precision @ {custom_th:.2f}", f"{cust_res['precision']*100:.1f}%", f"{c_cm['tp']} TP vs {c_cm['fp']} FP")
+with ct2:
+    render_kpi(f"Recall @ {custom_th:.2f}", f"{cust_res['recall']*100:.1f}%", f"Caught {c_cm['tp']} / {c_cm['tp'] + c_cm['fn']} churners")
+with ct3:
+    render_kpi(f"F1-Score @ {custom_th:.2f}", f"{cust_res['f1_score']:.3f}", "Harmonic mean")
+with ct4:
+    render_kpi("Strategy Fit", "High Recall" if custom_th < 0.45 else ("High Precision" if custom_th > 0.55 else "Balanced"), "Operational posture")
+
+st.markdown("<br>", unsafe_allow_html=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
 
