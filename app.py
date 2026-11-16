@@ -139,7 +139,7 @@ st.markdown("---")
 st.markdown(
     """
     <div class="content-card" style="border-top: 4px solid #1E3A8A; margin-top: 1.5rem;">
-        <h4 style="margin: 0 0 0.4rem 0; color: #1E3A8A;">🎓 Project Developed By</h4>
+        <h4 style="margin: 0 0 0.4rem 0; color: #1E3A8A;">Project Made By</h4>
         <p style="font-size: 0.85rem; color: #64748B; margin-bottom: 0.8rem;">
             Academic Capstone Project: <em>Customer360 — Customer Segmentation & Retention Intelligence Platform</em>
         </p>

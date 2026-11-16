@@ -210,7 +210,7 @@ $$\text{Expected Monthly Exposure} = \sum_{i=1}^{N} (\text{MonthlyCharges}_i \ti
 
 ---
 
-## 👥 Project Team & Contributors
+## 👥 Project Made By
 
 | Contributor Name | Roll Number | Academic Role |
 | :--- | :--- | :--- |

@@ -281,7 +281,7 @@ def render_sidebar():
             """
             <div style="padding: 0.75rem; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; font-size: 0.78rem;">
                 <div style="font-weight: 700; color: #1E3A8A; margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.5px; font-size: 0.72rem; text-align: center;">
-                    🎓 Project Contributors
+                    Project Made By
                 </div>
                 <div style="color: #334155; line-height: 1.35;">
                     <div style="margin-bottom: 0.4rem; padding-bottom: 0.35rem; border-bottom: 1px dashed #E2E8F0;">
