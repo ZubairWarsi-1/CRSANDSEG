@@ -210,6 +210,24 @@ $$\text{Expected Monthly Exposure} = \sum_{i=1}^{N} (\text{MonthlyCharges}_i \ti
 
 ---
 
+## 📚 Official Project Documentation & User Manuals (PDF Suite)
+
+The project includes an enterprise-grade, publication-quality technical documentation and user manual suite located in the [`documentation/`](file:///documentation/) directory. All documents feature a corporate blue design system, mathematical formulations, high-resolution architecture diagrams, empirical hold-out benchmark results, and step-by-step operating workflows:
+
+| Deliverable PDF Document | Scope & Target Audience | Page Count & Details |
+| :--- | :--- | :--- |
+| [**Customer_360_Complete_Project_Documentation.pdf**](file:///documentation/Customer_360_Complete_Project_Documentation.pdf) | **Master Comprehensive Documentation**: Covers all 15 structured chapters, technical architecture, 13-step data cleaning pipeline, ML mathematics, verified benchmarks, business outcomes, complete user manual, reports, developer setup, troubleshooting, roadmap, glossary, and academic contributor credits. | **29 Pages** &bull; 2.3 MB |
+| [**Customer_360_User_Manual.pdf**](file:///documentation/Customer_360_User_Manual.pdf) | **Dedicated End-User Operating Guide**: Non-technical step-by-step walkthrough across all 7 platform pages, file upload & quality grading, churn prediction drilldown, counterfactual what-if simulation, retention priority leaderboard, and CRM contact logging. | **16 Pages** &bull; 543 KB |
+| [**Customer_360_Technical_Documentation.pdf**](file:///documentation/Customer_360_Technical_Documentation.pdf) | **Dedicated Technical & Engineering Specification**: Layered architecture, technology matrix, Scikit-learn & XGBoost pipelines, 5-fold cross-validation, PR-AUC prevalence baselines, Brier score calibration, SQLite database schema, 6 CSV export contracts, and developer test setup. | **22 Pages** &bull; 1.98 MB |
+
+### Regenerating Documentation & Diagrams
+All diagrams and PDF documents are 100% reproducible and can be recompiled at any time via a single command:
+```powershell
+python documentation/generate_documentation_pdfs.py
+```
+
+---
+
 ## 👥 Project Made By
 
 | Contributor Name | Roll Number | Academic Role |
